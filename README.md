@@ -136,6 +136,32 @@ established**. These tests do not establish conversational or production securit
 | Prompt injection in source text | Text stored as data; no LLM invocation | Data-storage test only | LLM resistance not evaluated |
 | Unauthorized order access | Planned: deny private order queries without verified identity; enforce ownership authorization inside the data-access tool | Future negative authorization tests | NOT IMPLEMENTED |
 
+## Milestone 2 — specified, not implemented
+
+M2 specifies a minimal conversational catalog agent: AGT-01 product interpretation
+and validated intent routing; AGT-02 catalog-grounded facts; AGT-03 honest empty
+results; AGT-04 isolated in-memory conversation history; AGT-05 safe tool execution
+and sanitized failures. The first slice targets AGT-01–03 and invalid arguments
+from AGT-05. RAG, policies, authentication, private orders and promotions are excluded.
+
+The proposed LangGraph StateGraph has three nodes: interpret, validate/execute,
+and deterministic render. An injected structured-output adapter extracts a closed
+intent (`search_products`, `clarification`, or `unsupported`) and catalog-compatible
+parameters. Python validates the extraction and selects the operation; factual
+output comes exclusively from actual catalog results. Ambiguous and unsupported
+requests receive fixed fallbacks. There is no second tool-calling router. Schema
+validation does not guarantee semantically correct interpretation.
+LangGraph adds complexity over a Python loop but supports future explicit retrieval
+and human review workflows. See [the M2 specification](docs/M2.md) for acceptance
+criteria, interfaces, trust boundaries, dependency/security sources and test cases.
+
+Planned TDD uses an injected fake model with the real graph, CSV loader and catalog,
+then verifies the intent contract, real catalog routing, exact argument propagation,
+grounded facts, malformed-intent rejection, empty results and both fallback intents.
+RED begins only after dependency approval and environment
+preparation. **No M2 tests or agent functionality are implemented; dependency
+installation and lockfile auditing await explicit approval.**
+
 ## Planned demo authentication — NOT IMPLEMENTED
 
 After the conversational MVP is functional, demo mode will use credential-based
