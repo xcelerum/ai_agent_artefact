@@ -84,7 +84,8 @@ def invoke(catalog, extraction, message='Show catalog products.'):
 
 
 def search_intent(**parameters):
-    return {'intent': 'search_products', 'parameters': parameters}
+    return {'schema_version': '2', 'disposition': 'execute', 'tasks': [
+        {'id': 't1', 'intent': 'catalog_lookup', 'parameters': parameters}]}
 
 
 def test_search_intent_routes_with_exact_validated_arguments(catalog, searches):
@@ -107,9 +108,10 @@ def test_search_intent_routes_with_exact_validated_arguments(catalog, searches):
     schema = model.calls[0][2]
     assert schema['type'] == 'object'
     assert schema['additionalProperties'] is False
-    assert set(schema['required']) == {'intent', 'parameters'}
-    assert set(schema['properties']['intent']['enum']) == {
-        'search_products', 'clarification', 'unsupported',
+    assert set(schema['required']) == {'schema_version', 'disposition', 'tasks'}
+    assert schema['properties']['schema_version']['const'] == '2'
+    assert set(schema['properties']['tasks']['items']['properties']['intent']['enum']) == {
+        'catalog_lookup', 'policy_question', 'order_status',
     }
 
 
@@ -176,7 +178,7 @@ def test_empty_search_is_truthful_and_snapshot_scoped(catalog, searches):
         'list-specs', 'numeric-spec', 'unknown-parameter', 'duplicate-normalized-spec'])
 def test_invalid_arguments_never_execute_search(catalog, searches, parameters):
     """AGT-05: strict application validation runs before real catalog search."""
-    reply, _ = invoke(catalog, {'intent': 'search_products', 'parameters': parameters})
+    reply, _ = invoke(catalog, search_intent(**parameters))
     assert reply.status == 'invalid_request'
     assert reply.products == []
     assert isinstance(reply.text, str) and reply.text
@@ -184,10 +186,10 @@ def test_invalid_arguments_never_execute_search(catalog, searches, parameters):
 
 
 @pytest.mark.parametrize('extraction', [
-    {'intent': 'execute_shell', 'parameters': {}},
-    {'intent': 'search_products', 'parameters': []},
-    {'intent': 'search_products'},
-    [{'intent': 'search_products', 'parameters': {}}],
+    {'schema_version': '2', 'disposition': 'execute', 'tasks': [{'id': 't1', 'intent': 'execute_shell', 'parameters': {}}]},
+    {'schema_version': '2', 'disposition': 'execute', 'tasks': [{'id': 't1', 'intent': 'catalog_lookup', 'parameters': []}]},
+    {'schema_version': '2', 'disposition': 'execute', 'tasks': [{'id': 't1', 'intent': 'catalog_lookup'}]},
+    [{'schema_version': '2', 'disposition': 'execute', 'tasks': []}],
 ], ids=['unknown-intent', 'invalid-parameters', 'missing-parameters', 'multiple-intents'])
 def test_malformed_intents_never_execute_search(catalog, searches, extraction):
     """AGT-01/05: no unknown intent or malformed structure can force a search."""
@@ -201,11 +203,12 @@ def test_malformed_intents_never_execute_search(catalog, searches, extraction):
     ('clarification', 'That one, please.',
      'Please clarify the product or search criteria you want.'),
     ('unsupported', 'What is your returns policy?',
-     'This assistant currently supports catalog product searches only.'),
+     'Supported requests include catalog products, configured policy evidence, '
+     'and safe order-support guidance. Private order details require trusted authorization.'),
 ])
 def test_fallback_intents_never_execute_search(catalog, searches, intent, message, text):
     """AGT-01/05: application renders explicit fallbacks without catalog access."""
-    reply, _ = invoke(catalog, {'intent': intent, 'parameters': {}}, message)
+    reply, _ = invoke(catalog, {'schema_version': '2', 'disposition': intent, 'tasks': []}, message)
     assert reply.status == intent
     assert reply.products == []
     assert reply.text == text

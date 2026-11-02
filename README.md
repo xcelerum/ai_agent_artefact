@@ -1,10 +1,11 @@
-# Empório da Música — deterministic catalog
+# Empório da Música — customer-support prototype
 
 Artefact AI Engineer challenge: build a Python customer-support prototype for a
-fictional music-instrument store. **Milestone 1 implements only the deterministic
-catalog foundation**, not a complete customer-support agent.
+fictional music-instrument store. M1 provides the deterministic catalog foundation;
+M2 Cycle 1 implements bounded multi-intent orchestration with an injectable model
+interface. A live LLM and a complete customer-support demo are not implemented.
 
-## Implemented
+## Implemented catalog foundation (M1)
 
 - Typed UTF-8 CSV loading for products and categories, with `Decimal` money,
   ISO dates, validated statuses, unique IDs and category references.
@@ -36,7 +37,7 @@ Construct untrusted input through `load_catalog`, not directly through dataclass
 
 The following is a Python API usage example requiring local product/category CSV
 files. It is not yet a runnable customer-support demo after cloning. Public
-synthetic fixtures and a runnable demo interface are planned.
+synthetic test fixtures are included; a conversational demo interface remains planned.
 
 ```python
 from decimal import Decimal
@@ -53,18 +54,20 @@ json_safe_products = [serialize_product(product) for product in products]
 ## Setup and tests
 
 Use Python **3.14.10**, uv, and default GitHub Codespaces. No Poetry or custom
-Dev Container is required. Runtime code uses only the standard library; pytest is
-an existing locked development dependency. On a fresh checkout, provision it with:
+Dev Container is required. M1 domain code uses the standard library. The agent's
+installed and locked direct runtime dependency is **langgraph==1.2.19**; pytest is
+the development test runner. On a fresh checkout, provision dependencies with:
 
 ```sh
 uv sync --locked --python 3.14.10
 uv run --locked python -m pytest -q
 ```
 
-The suite can also run without pytest through the standard-library runner:
+The M1 catalog tests can also run through the standard-library runner; the M2
+pytest cases require the command above:
 
 ```sh
-.venv/bin/python -B -m unittest discover -s tests -p 'test_*.py' -v
+.venv/bin/python -B -m unittest discover -s tests -p 'test_catalog.py' -v
 ```
 
 Synthetic tests generate invented records in temporary directories and clean up
@@ -74,7 +77,7 @@ only `data/private/desafio_tecnico_ai_eng - products.csv` and the corresponding
 65 products, 9 categories, 61 purchasable products and availability edge cases;
 otherwise it skips. Originals remain local and ignored; do not publish them.
 
-Final verification on 2026-11-02 with Python 3.14.10:
+Historical M1 verification on 2026-11-02 with Python 3.14.10:
 
 - Existing environment: `uv run --locked python -m pytest -q` reported
   **22 passed, 76 subtests passed in 0.10s**, exit 0, including the private smoke test.
@@ -99,7 +102,7 @@ Availability cases use synthetic equivalents of the original snapshot edge cases
 | CAT-02 | Active product with zero stock is not purchasable | `test_status_and_stock_are_independent` | PASS |
 | CAT-03 | Coming-soon product with positive stock is not purchasable | `test_status_and_stock_are_independent` | PASS |
 | CAT-04 | Discontinued product with positive stock is not purchasable | `test_status_and_stock_are_independent` | PASS |
-| CAT-05 | Category with no listed products returns no results, without asserting store-wide absence | `test_search_combines_filters_and_includes_price_boundary` | PASS — empty domain result; customer-facing wording NOT IMPLEMENTED |
+| CAT-05 | Category with no listed products returns no results, without asserting store-wide absence | `test_search_combines_filters_and_includes_price_boundary`; M2 `test_empty_search_is_truthful_and_snapshot_scoped` | PASS — empty domain result and snapshot-scoped customer response |
 | CAT-06 | Missing technical specs are not invented; unsupported filters are explicit errors | `test_optional_description_and_unknown_spec_are_not_invented`; `test_missing_requested_specification_excludes_active_product`; `test_search_combines_filters_and_includes_price_boundary`; `test_supported_specification_can_have_no_matches` | PASS — domain behavior |
 
 Ingestion regressions additionally cover malformed quoted CSVs in both tables
@@ -134,33 +137,36 @@ established**. These tests do not establish conversational or production securit
 | Ambiguous or malformed specs | Strict JSON and normalized-key duplicate checks | Synthetic regression tests | Tested |
 | Publishing private inputs/secrets | Ignore rules; explicit proposed commit list | Git ignore/status checks; human review required | Local guard, not a leak guarantee |
 | Prompt injection in source text | Text stored as data; no LLM invocation | Data-storage test only | LLM resistance not evaluated |
-| Unauthorized order access | Planned: deny private order queries without verified identity; enforce ownership authorization inside the data-access tool | Future negative authorization tests | NOT IMPLEMENTED |
+| Unauthorized order access | M2 order route always denies private lookup and requires trusted authorization | `test_order_gate_never_reads_csv_or_treats_session_as_identity` | Denial tested; authentication and authorized ownership checks NOT IMPLEMENTED |
 
-## Milestone 2 — specified, not implemented
+## Milestone 2 — Cycle 1 orchestration implemented
 
-M2 specifies a minimal conversational catalog agent: AGT-01 product interpretation
-and validated intent routing; AGT-02 catalog-grounded facts; AGT-03 honest empty
-results; AGT-04 isolated in-memory conversation history; AGT-05 safe tool execution
-and sanitized failures. The first slice targets AGT-01–03 and invalid arguments
-from AGT-05. RAG, policies, authentication, private orders and promotions are excluded.
+The compiled LangGraph runs `prepare_turn → interpret_intents → validate_plan →
+dispatch_tasks → requested workers → aggregate_results → render_response`.
+One injected extraction produces a closed version-2 plan with at most four tasks:
+`catalog_lookup`, `policy_question`, or `order_status`. Python validates the whole
+plan, including types, exact decimal strings and duplicate effective operations.
+Conditional edges route invalid/clarification/unsupported plans to fixed fallbacks;
+valid plans use one `Send` per task. A list-concatenation reducer preserves concurrent
+worker outputs; checked fan-in sorts by planned position before deterministic rendering.
 
-The proposed LangGraph StateGraph has three nodes: interpret, validate/execute,
-and deterministic render. An injected structured-output adapter extracts a closed
-intent (`search_products`, `clarification`, or `unsupported`) and catalog-compatible
-parameters. Python validates the extraction and selects the operation; factual
-output comes exclusively from actual catalog results. Ambiguous and unsupported
-requests receive fixed fallbacks. There is no second tool-calling router. Schema
-validation does not guarantee semantically correct interpretation.
-LangGraph adds complexity over a Python loop but supports future explicit retrieval
-and human review workflows. See [the M2 specification](docs/M2.md) for acceptance
-criteria, interfaces, trust boundaries, dependency/security sources and test cases.
+- **Catalog:** fully functional real M1 search, exact prices and snapshot availability.
+- **Policies:** injectable service boundary, demonstrated with synthetic evidence only;
+  missing sources explicitly return `policy_unavailable`. No real PDF retrieval.
+- **Orders:** authorization-required safe support guidance; no private lookup or tracking.
 
-Planned TDD uses an injected fake model with the real graph, CSV loader and catalog,
-then verifies the intent contract, real catalog routing, exact argument propagation,
-grounded facts, malformed-intent rejection, empty results and both fallback intents.
-RED begins only after dependency approval and environment
-preparation. **No M2 tests or agent functionality are implemented; dependency
-installation and lockfile auditing await explicit approval.**
+AGT-01–03 and the tested AGT-05 validation/failure boundaries are implemented with
+fake structured extraction. AGT-04 history, a live LLM, a checkpointer, real policy
+retrieval/rules, promotions, authenticated order access and a conversational CLI
+remain unimplemented. Schema validity does not establish semantic interpretation
+accuracy. Every invocation starts fresh; session IDs are not authentication.
+
+Permanent tests exercise the actual graph and synthetic CSV catalog, including
+conditional routing, same-worker fan-out, both controlled completion orders,
+single fan-in/render, partial failures, fact grounding, isolation and duplicate
+spec-filter equivalence. Run `uv run --locked python -m pytest -q` for M1 and M2.
+See [docs/M2.md](docs/M2.md) for architectural detail and
+[targeted-fix evidence](tests/evidence/m2-cycle1-fixes.md) for observed RED/GREEN results.
 
 ## Planned demo authentication — NOT IMPLEMENTED
 
@@ -185,8 +191,8 @@ and access denial after logout. All mechanisms and tests in this section are
 
 ## Limitations and development disclosure
 
-No LLM, LangGraph, RAG, order authorization, policy retrieval, promotions, PIX pricing,
-installments or conversational CLI is implemented yet. Prices are table prices;
+No live LLM, RAG, authenticated order lookup, real policy retrieval, promotions,
+PIX pricing, installments or conversational CLI is implemented yet. Prices are table prices;
 sub-cent source amounts are rejected without rounding. Specs support string values
 only, with no aliases or unit conversion. There is no freshness guarantee,
 production authentication, legal adjudication or compliance certification.
