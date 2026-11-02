@@ -1,0 +1,37 @@
+# Original challenge materials and local private data
+/data/private/
+*.zip
+
+# Environments, bytecode and tool caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.uv-cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+*.egg-info/
+
+# Secrets and local state
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+/secrets/
+/.aws/
+*.db
+*.sqlite
+*.sqlite3
+/traces/
+
+# Local review outputs and disabled legacy environment
+/revisao*.txt
+/review-output/
+/local-review/
+/.devcontainer.DESATIVADO/
