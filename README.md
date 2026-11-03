@@ -2,8 +2,9 @@
 
 Artefact AI Engineer challenge: build a Python customer-support prototype for a
 fictional music-instrument store. M1 provides the deterministic catalog foundation;
-M2 Cycle 1 implements bounded multi-intent orchestration with an injectable model
-interface. A live LLM and a complete customer-support demo are not implemented.
+M2 implements bounded multi-intent orchestration with an injectable model interface;
+Cycle 2A adds local policy evidence and promotional/PIX pricing. A live LLM and a
+complete customer-support demo are not implemented.
 
 ## Implemented catalog foundation (M1)
 
@@ -55,8 +56,9 @@ json_safe_products = [serialize_product(product) for product in products]
 
 Use Python **3.14.10**, uv, and default GitHub Codespaces. No Poetry or custom
 Dev Container is required. M1 domain code uses the standard library. The agent's
-installed and locked direct runtime dependency is **langgraph==1.2.19**; pytest is
-the development test runner. On a fresh checkout, provision dependencies with:
+installed and locked direct runtime dependencies are **langgraph==1.2.19** and
+**pypdf==6.21.4** (local PDF extraction); pytest is the development test runner.
+On a fresh checkout, provision dependencies with:
 
 ```sh
 uv sync --locked --python 3.14.10
@@ -139,34 +141,51 @@ established**. These tests do not establish conversational or production securit
 | Prompt injection in source text | Text stored as data; no LLM invocation | Data-storage test only | LLM resistance not evaluated |
 | Unauthorized order access | M2 order route always denies private lookup and requires trusted authorization | `test_order_gate_never_reads_csv_or_treats_session_as_identity` | Denial tested; authentication and authorized ownership checks NOT IMPLEMENTED |
 
-## Milestone 2 — Cycle 1 orchestration implemented
+## Milestone 2 — multi-intent orchestration and Cycle 2A business sources
 
 The compiled LangGraph runs `prepare_turn → interpret_intents → validate_plan →
 dispatch_tasks → requested workers → aggregate_results → render_response`.
 One injected extraction produces a closed version-2 plan with at most four tasks:
 `catalog_lookup`, `policy_question`, or `order_status`. Python validates the whole
 plan, including types, exact decimal strings and duplicate effective operations.
+Catalog requests may include a payment method; policy requests may include strictly
+typed customer-stated context, which is never treated as verified eligibility.
 Conditional edges route invalid/clarification/unsupported plans to fixed fallbacks;
 valid plans use one `Send` per task. A list-concatenation reducer preserves concurrent
 worker outputs; checked fan-in sorts by planned position before deterministic rendering.
 
-- **Catalog:** fully functional real M1 search, exact prices and snapshot availability.
-- **Policies:** injectable service boundary, demonstrated with synthetic evidence only;
-  missing sources explicitly return `policy_unavailable`. No real PDF retrieval.
+- **Catalog:** real M1 search, exact prices and snapshot availability. An optional
+  pricing service uses validated promotion CSV rows, preserves table prices, and
+  rounds discounted prices to cents with ROUND_HALF_UP. Source-backed PIX is 5%
+  off table price, never stacked on a promotion; no selected method means no PIX quote.
+- **Policies:** real local PDF section retrieval with physical/printed-page references;
+  missing sources return `policy_unavailable`. Case facts remain customer claims:
+  missing/conflicting facts ask for clarification; other cases require staff review.
 - **Orders:** authorization-required safe support guidance; no private lookup or tracking.
 
 AGT-01–03 and the tested AGT-05 validation/failure boundaries are implemented with
-fake structured extraction. AGT-04 history, a live LLM, a checkpointer, real policy
-retrieval/rules, promotions, authenticated order access and a conversational CLI
-remain unimplemented. Schema validity does not establish semantic interpretation
+fake structured extraction. AGT-04 history, a live LLM, a checkpointer, authenticated
+order access and a conversational CLI remain unimplemented. Policy evidence is
+store-manual guidance, not automatic legal adjudication. Schema validity does not establish semantic interpretation
 accuracy. Every invocation starts fresh; session IDs are not authentication.
+
+Configure sources explicitly: `load_promotions(path, catalog)` and
+`LocalPolicyService.from_pdf(path)` load local snapshots; inject
+`PricingService(promotions, policy.pricing_rules())` and the policy service through
+`build_agent(..., pricing_service=..., policy_service=...)`. Modules are
+`app.data.promotions`, `app.data.store_policy` and `app.domain.pricing`. No private
+source loads automatically. PDF parsing uses a bounded local subprocess on Linux;
+missing/malformed or unmatched evidence is unavailable. Originals stay ignored in
+`data/private/`; public tests create invented CSVs and PDFs. Optional original-source
+smoke tests skip when sources are absent and never print source passages.
 
 Permanent tests exercise the actual graph and synthetic CSV catalog, including
 conditional routing, same-worker fan-out, both controlled completion orders,
-single fan-in/render, partial failures, fact grounding, isolation and duplicate
-spec-filter equivalence. Run `uv run --locked python -m pytest -q` for M1 and M2.
+single fan-in/render, partial failures, fact grounding, isolation, promotions/PIX,
+PDF provenance and missing/ambiguous case facts. Run
+`uv run --locked python -m pytest -q` for M1 and M2.
 See [docs/M2.md](docs/M2.md) for architectural detail and
-[targeted-fix evidence](tests/evidence/m2-cycle1-fixes.md) for observed RED/GREEN results.
+[Cycle 2A evidence](tests/evidence/m2-cycle2a-green.md) for observed RED/GREEN results.
 
 ## Planned demo authentication — NOT IMPLEMENTED
 
@@ -191,9 +210,13 @@ and access denial after logout. All mechanisms and tests in this section are
 
 ## Limitations and development disclosure
 
-No live LLM, RAG, authenticated order lookup, real policy retrieval, promotions,
-PIX pricing, installments or conversational CLI is implemented yet. Prices are table prices;
-sub-cent source amounts are rejected without rounding. Specs support string values
+No live LLM, vector RAG, authenticated order lookup, financing approval or
+conversational CLI is implemented. Local policy retrieval is deterministic, not a
+general semantic/legal engine; individualized shipping/financing decisions remain
+unimplemented. Policy recognition targets the supplied manual's sections and
+verified rule profile, not arbitrary policy documents. Catalog filters use table
+prices; promotion validity has no inferred dates. Sub-cent source table amounts
+are rejected; computed discounts round explicitly. Specs support string values
 only, with no aliases or unit conversion. There is no freshness guarantee,
 production authentication, legal adjudication or compliance certification.
 Full adversarial LLM evaluations belong to a future milestone.

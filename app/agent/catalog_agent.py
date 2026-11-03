@@ -15,6 +15,7 @@ from app.agent.plans import plan_schema, validate_plan
 from app.agent.responses import aggregate, fixed_reply, render_reply
 from app.agent.workers import catalog_lookup, order_authorization_gate, policy_lookup
 from app.domain.catalog import Catalog
+from app.domain.pricing import PricingService
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class CatalogAgent:
     catalog: Catalog
     model: StructuredIntentModel
     policy_service: PolicyLookup | None = None
+    pricing_service: PricingService | None = None
     _graph: CompiledStateGraph = field(init=False, repr=False, compare=False)
 
     def __post_init__(self):
@@ -92,7 +94,7 @@ class CatalogAgent:
         return [Send(nodes[task.intent], {'task': task}) for task in state['validated_plan']]
 
     def _catalog_worker(self, state: WorkerState) -> dict:
-        return {'task_results': [catalog_lookup(state['task'], self.catalog)]}
+        return {'task_results': [catalog_lookup(state['task'], self.catalog, self.pricing_service)]}
 
     def _policy_worker(self, state: WorkerState) -> dict:
         return {'task_results': [policy_lookup(state['task'], self.policy_service)]}
@@ -109,5 +111,7 @@ class CatalogAgent:
 
 
 def build_agent(*, catalog: Catalog, model: StructuredIntentModel,
-                policy_service: PolicyLookup | None = None) -> CatalogAgent:
-    return CatalogAgent(catalog=catalog, model=model, policy_service=policy_service)
+                policy_service: PolicyLookup | None = None,
+                pricing_service: PricingService | None = None) -> CatalogAgent:
+    return CatalogAgent(catalog=catalog, model=model, policy_service=policy_service,
+                        pricing_service=pricing_service)

@@ -5,6 +5,8 @@ from enum import StrEnum
 import operator
 from typing import Annotated, Protocol, TypedDict
 
+from app.domain.policy_rules import PolicyAssessment
+
 
 class Intent(StrEnum):
     CATALOG = 'catalog_lookup'
@@ -37,13 +39,14 @@ class TaskResult:
 
 @dataclass(frozen=True)
 class PolicyEvidence:
-    """Trusted configured-service evidence; test sources are explicitly synthetic."""
+    """Configured-service evidence, separate from a conservative case assessment."""
     text: str
     source_references: tuple[str, ...]
+    assessment: PolicyAssessment | None = None
 
 
 class PolicyLookup(Protocol):
-    def lookup(self, *, topic: str) -> PolicyEvidence | None: ...
+    def lookup(self, *, topic: str, context: dict | None = None) -> PolicyEvidence | None: ...
 
 
 @dataclass(frozen=True)

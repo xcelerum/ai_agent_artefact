@@ -7,6 +7,7 @@ import unicodedata
 
 from app.agent.contracts import Intent, ValidatedTask
 from app.domain.catalog import Catalog
+from app.domain.policy_rules import context_schema, validate_context
 
 
 def _catalog_schema() -> dict:
@@ -26,6 +27,7 @@ def _catalog_schema() -> dict:
                 'additionalProperties': {'type': 'string', 'minLength': 1, 'maxLength': 200},
             },
             'purchasable_only': {'type': 'boolean', 'default': True},
+            'payment_method': {'enum': ['pix', 'credit_card', 'cash']},
         },
     }
     return search_parameters
@@ -106,7 +108,8 @@ def plan_schema() -> dict:
         Intent.CATALOG: _catalog_schema(),
         Intent.POLICY: {
             'type': 'object', 'additionalProperties': False, 'required': ['topic'],
-            'properties': {'topic': {'type': 'string', 'minLength': 1, 'maxLength': 200}},
+            'properties': {'topic': {'type': 'string', 'minLength': 1, 'maxLength': 200},
+                           'context': context_schema()},
         },
         Intent.ORDER: {
             'type': 'object', 'additionalProperties': False,
@@ -150,15 +153,24 @@ def _parameters(intent: Intent, parameters: object, catalog: Catalog) -> dict:
     if type(parameters) is not dict:
         raise ValueError('Expected parameter object')
     if intent == Intent.CATALOG:
-        arguments = _catalog_parameters(parameters)
+        search_parameters = {key: value for key, value in parameters.items() if key != 'payment_method'}
+        arguments = _catalog_parameters(search_parameters)
+        if 'payment_method' in parameters:
+            method = parameters['payment_method']
+            if type(method) is not str or method not in ('pix', 'credit_card', 'cash'):
+                raise ValueError('Invalid payment method')
+            arguments['payment_method'] = method
         supported = {_normalized_key(key) for p in catalog.products for key in p.specs}
         if any(_normalized_key(key) not in supported for key in arguments['specs'] or {}):
             raise ValueError('Unsupported specification key')
         return arguments
     if intent == Intent.POLICY:
-        if set(parameters) != {'topic'}:
+        if 'topic' not in parameters or not set(parameters) <= {'topic', 'context'}:
             raise ValueError('Invalid policy parameters')
-        return {'topic': _text(parameters['topic'])}
+        arguments = {'topic': _text(parameters['topic'])}
+        if 'context' in parameters:
+            arguments['context'] = validate_context(parameters['context'])
+        return arguments
     if not set(parameters) <= {'order_reference'}:
         raise ValueError('Invalid order parameters')
     reference = parameters.get('order_reference')

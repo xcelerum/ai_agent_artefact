@@ -41,13 +41,20 @@ def aggregate(tasks: tuple[ValidatedTask, ...], results: list[TaskResult]) -> tu
     ordered.sort(key=lambda item: item.position)
     if corrupt:
         return 'aggregation_error', ordered
-    successes = sum(item.status in ('ok', 'no_matches') for item in ordered)
+    # Assessment outcomes carry valid evidence; they are not tool failures.
+    statuses = {item.status for item in ordered}
+    nonfailures = {'ok', 'no_matches', 'clarification', 'review_required'}
+    successes = sum(item.status in nonfailures for item in ordered)
     if len(ordered) == 1:
         status = 'tool_error' if ordered[0].status == 'error' else ordered[0].status
-    elif successes == len(ordered):
-        status = 'no_matches' if all(item.status == 'no_matches' for item in ordered) else 'ok'
-    else:
+    elif successes != len(ordered):
         status = 'partial_failure' if successes else 'failed'
+    elif 'clarification' in statuses:
+        status = 'clarification'
+    elif 'review_required' in statuses:
+        status = 'review_required'
+    else:
+        status = 'no_matches' if statuses == {'no_matches'} else 'ok'
     return status, ordered
 
 
@@ -63,6 +70,19 @@ def _catalog_text(products: list[dict]) -> str:
             f"stock: {product['stock_quantity']}; category ID: {product['category_id']}; "
             f"specifications: {specs}"
         )
+        pricing = product.get('pricing')
+        if pricing:
+            if pricing['promotion_applied']:
+                lines.append(f"Original table price: BRL {pricing['table_price']}; promotional price: "
+                             f"BRL {pricing['promotional_price']} ({pricing['discount_percent']}% discount).")
+            if pricing['pix_price'] is not None:
+                lines.append(f"Selected PIX price: BRL {pricing['pix_price']} (5% of table price off; not cumulative).")
+            elif pricing['pix_status'] == 'excluded_promotion':
+                lines.append('PIX discount does not apply to promotional products; no discount stacking.')
+            elif pricing['pix_status'] == 'policy_unavailable':
+                lines.append('The conditional PIX price could not be confirmed from policy evidence.')
+            elif pricing['pix_status'] == 'unavailable_snapshot':
+                lines.append('PIX and promotional purchase offers are unavailable for this snapshot listing.')
     return '\n'.join(lines)
 
 
@@ -78,9 +98,15 @@ def render_reply(status: str, outcomes: list[TaskResult]) -> AgentReply:
                 if product['product_id'] not in seen:
                     seen.add(product['product_id'])
                     products.append(deepcopy(product))
-        elif outcome.status == 'ok' and outcome.domain == 'policy':
+        elif outcome.status in ('ok', 'clarification', 'review_required') and outcome.domain == 'policy':
             text = 'Configured policy evidence: ' + json.dumps(outcome.facts['text'], ensure_ascii=False)
             text += '\nSources: ' + ', '.join(json.dumps(ref) for ref in outcome.source_references)
+            assessment = outcome.facts.get('assessment')
+            if assessment:
+                text += '\n' + assessment['notice']
+                if assessment['missing_facts']:
+                    text += '\nPlease clarify: ' + ', '.join(assessment['missing_facts']) + '.'
+                text += '\nCustomer-stated window: ' + assessment['window_status'] + '; staff review required.'
         else:
             category = ('aggregation_error' if outcome.error_category == 'aggregation_error' else
                         'tool_error' if outcome.status == 'error' else outcome.status)
