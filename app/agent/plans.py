@@ -8,6 +8,7 @@ import unicodedata
 from app.agent.contracts import Intent, ValidatedTask
 from app.domain.catalog import Catalog
 from app.domain.policy_rules import context_schema, validate_context
+from app.agent.semantics import request_schema, validate_request, HINTS
 
 
 def _catalog_schema() -> dict:
@@ -123,6 +124,7 @@ def plan_schema() -> dict:
             'id': {'type': 'string', 'pattern': '^[A-Za-z][A-Za-z0-9_-]{0,31}$', 'maxLength': 32},
             'intent': {'type': 'string', 'enum': [intent.value for intent in Intent]},
             'parameters': {'type': 'object'},
+            'request': {'anyOf': [request_schema(), {'type': 'null'}]},
         },
         'allOf': [
             {'if': {'properties': {'intent': {'const': intent.value}}},
@@ -137,6 +139,7 @@ def plan_schema() -> dict:
             'schema_version': {'const': '2'},
             'disposition': {'type': 'string', 'enum': ['execute', 'clarification', 'unsupported']},
             'tasks': {'type': 'array', 'maxItems': 4, 'items': item},
+            'response_hint': {'enum': [*HINTS, None]},
         },
         'allOf': [{
             'if': {'properties': {'disposition': {'const': 'execute'}}},
@@ -147,6 +150,54 @@ def plan_schema() -> dict:
                         'Use separate tasks for independent domains or different filters. '
                         'Ask for clarification on ambiguity; do not guess missing criteria.'),
     }
+
+
+def _resolve_category(arguments: dict, catalog: Catalog) -> dict:
+    """Resolve confirmed Portuguese guitar phrases against actual catalog facts.
+
+    No stemming, fuzzy name matching, invented IDs or fallback broad searches.
+    Keep exact product names and conflicting explicit filters unchanged.
+    """
+    forms = {'violao', 'violoes'}
+    matches = [category for category in catalog.categories
+               if _normalized_key(category.name) in forms]
+    if len(matches) != 1:
+        return arguments
+    category = matches[0]
+    category_text = arguments['category']
+    nylon_forms = {'violao de nylon', 'violao nylon', 'violoes de nylon', 'violoes nylon'}
+    category_key = _normalized_key(category_text) if category_text is not None else None
+    name = arguments['name']
+    name_key = _normalized_key(name) if name is not None else None
+    generic_name = (name_key in forms | nylon_forms
+                    and not any(_normalized_key(product.name) == name_key
+                                for product in catalog.products))
+    compatible = (category_key is None or category_key in forms | nylon_forms)
+    compatible = compatible and arguments['category_id'] in (None, category.category_id)
+    if category_key in nylon_forms or (generic_name and name_key in nylon_forms and compatible):
+        if not any(product.category_id == category.category_id
+                   and any(_normalized_key(k) == 'strings' and _normalized_key(v) == 'nylon'
+                           for k, v in product.specs.items()) for product in catalog.products):
+            raise ValueError('Unconfirmed nylon specification')
+        specs = dict(arguments['specs'] or {})
+        supported = {_normalized_key(k) for product in catalog.products for k in product.specs}
+        # Correct the observed unsupported key only within this explicit nylon phrase.
+        for key in tuple(specs):
+            if (_normalized_key(key) == 'material' and 'material' not in supported
+                    and _normalized_key(specs[key]) == 'nylon'):
+                del specs[key]
+        strings = [value for key, value in specs.items() if _normalized_key(key) == 'strings']
+        if any(_normalized_key(value) != 'nylon' for value in strings):
+            raise ValueError('Conflicting string specification')
+        if not strings:
+            specs['strings'] = 'nylon'
+        arguments['specs'] = specs
+    if category_key in forms | nylon_forms:
+        arguments['category'] = category.name
+    if generic_name and compatible:
+        arguments['name'] = None
+        arguments['category'] = category.name
+    return arguments
 
 
 def _parameters(intent: Intent, parameters: object, catalog: Catalog) -> dict:
@@ -160,6 +211,7 @@ def _parameters(intent: Intent, parameters: object, catalog: Catalog) -> dict:
             if type(method) is not str or method not in ('pix', 'credit_card', 'cash'):
                 raise ValueError('Invalid payment method')
             arguments['payment_method'] = method
+        arguments = _resolve_category(arguments, catalog)
         supported = {_normalized_key(key) for p in catalog.products for key in p.specs}
         if any(_normalized_key(key) not in supported for key in arguments['specs'] or {}):
             raise ValueError('Unsupported specification key')
@@ -186,8 +238,13 @@ def _fingerprint(value):
 
 def validate_plan(raw: object, catalog: Catalog) -> tuple[str, tuple[ValidatedTask, ...]]:
     value = _decode_plan(raw)
-    if set(value) != {'schema_version', 'disposition', 'tasks'} or value['schema_version'] != '2':
+    if (not {'schema_version', 'disposition', 'tasks'} <= set(value)
+            or not set(value) <= {'schema_version', 'disposition', 'tasks', 'response_hint'}
+            or value['schema_version'] != '2'):
         raise ValueError('Invalid plan envelope')
+    hint = value.get('response_hint')
+    if hint is not None and (type(hint) is not str or hint not in HINTS):
+        raise ValueError('Invalid response hint')
     disposition = value['disposition']
     if type(disposition) is not str or disposition not in ('execute', 'clarification', 'unsupported'):
         raise ValueError('Invalid disposition')
@@ -202,22 +259,26 @@ def validate_plan(raw: object, catalog: Catalog) -> tuple[str, tuple[ValidatedTa
         raise ValueError('Execute requires a task')
     accepted, identifiers, operations = [], set(), set()
     for position, task in enumerate(tasks):
-        if type(task) is not dict or set(task) != {'id', 'intent', 'parameters'}:
+        if (type(task) is not dict or not {'id', 'intent', 'parameters'} <= set(task)
+                or not set(task) <= {'id', 'intent', 'parameters', 'request'}):
             raise ValueError('Invalid task structure')
         identifier = task['id']
         if (type(identifier) is not str or re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,31}', identifier) is None
                 or identifier in identifiers or type(task['intent']) is not str):
             raise ValueError('Invalid task identity')
         intent = Intent(task['intent'])
+        request = validate_request(task.get('request'))
         parameters = _parameters(intent, task['parameters'], catalog)
         effective_parameters = parameters
         if intent == Intent.CATALOG:
             # Missing/null/empty specs all impose no restriction. Preserve dispatch arguments.
             effective_parameters = {**parameters, 'specs': parameters['specs'] or None}
-        operation = (intent, _fingerprint(effective_parameters))
+        operation = (intent, _fingerprint(effective_parameters),
+                     json.dumps(request, sort_keys=True) if request is not None else None)
         if operation in operations:
             raise ValueError('Duplicate operation')
         identifiers.add(identifier)
         operations.add(operation)
-        accepted.append(ValidatedTask(identifier, position, intent, parameters))
+        accepted.append(ValidatedTask(identifier, position, intent, parameters, request=request,
+                                      supplied_parameters=tuple(task['parameters'])))
     return disposition, tuple(accepted)

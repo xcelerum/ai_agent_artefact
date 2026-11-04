@@ -98,6 +98,8 @@ def render_reply(status: str, outcomes: list[TaskResult]) -> AgentReply:
                 if product['product_id'] not in seen:
                     seen.add(product['product_id'])
                     products.append(deepcopy(product))
+        elif outcome.status == 'clarification' and outcome.domain == 'policy' and not outcome.facts.get('text'):
+            text = 'Please clarify which store policy or situation you mean.'
         elif outcome.status in ('ok', 'clarification', 'review_required') and outcome.domain == 'policy':
             text = 'Configured policy evidence: ' + json.dumps(outcome.facts['text'], ensure_ascii=False)
             text += '\nSources: ' + ', '.join(json.dumps(ref) for ref in outcome.source_references)

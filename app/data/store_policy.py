@@ -1,7 +1,7 @@
 """Local section retrieval with explicit page provenance and conservative assessment."""
 
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 import hashlib
 import json
@@ -14,6 +14,7 @@ import unicodedata
 from app.agent.contracts import PolicyEvidence
 from app.domain.policy_rules import assess_case
 from app.domain.pricing import PixRules
+from app.data.policy_matching import topics, section_scope, bounded, rank_sections, normalize
 
 
 def _normalize(text: str) -> str:
@@ -87,21 +88,24 @@ def _index(pages: list[dict]) -> tuple[PolicyFragment, ...]:
 class LocalPolicyService:
     fragments: tuple[PolicyFragment, ...]
     source_id: str
+    extraction_failed: bool = False
 
     @classmethod
     def from_pdf(cls, path: Path):
         try:
             path = Path(path)
             if not 0 < path.stat().st_size <= 10 * 1024 * 1024:
-                return cls((), 'unavailable')
+                return cls((), 'unavailable', extraction_failed=True)
             digest = hashlib.sha256(path.read_bytes()).hexdigest()[:16]
             worker = Path(__file__).with_name('_pdf_worker.py')
             completed = subprocess.run([sys.executable, str(worker), str(path)],
                                        capture_output=True, timeout=10, check=True)
             data = json.loads(completed.stdout)
             return cls(_index(data['pages']), f'store-policy:{digest}')
-        except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+        except FileNotFoundError:
             return cls((), 'unavailable')
+        except (OSError, ValueError, KeyError, subprocess.SubprocessError):
+            return cls((), 'unavailable', extraction_failed=True)
 
     def _references(self, fragments) -> tuple[str, ...]:
         return tuple(f'{self.source_id}:section/{f.section}:pdf-page/{f.pdf_page}:'
@@ -112,21 +116,58 @@ class LocalPolicyService:
         return '\n'.join(f.text for f in self.fragments if f.section in sections)
 
     def lookup(self, *, topic: str, context: dict | None = None) -> PolicyEvidence | None:
-        selected = _topic(topic)
-        if selected is None:
-            return None
-        fragments = tuple(f for f in self.fragments if f.section in _topic_sections()[selected])
-        primary = _topic_sections()[selected][0]
-        if (not any(f.section == primary and len(f.text.splitlines()) > 1 for f in fragments)
-                or any(not f.text.strip() for f in fragments)):
-            return None
+        # Backward-compatible topic-only evidence interface.
+        evidence = self.retrieve(topic=topic, context=context)
+        return evidence if evidence.text and evidence.retrieval_status in ('ok', 'clarification_required') else None
+
+    def _fallback(self, allowed, required, query):
+        # Exactly one local index pass; no extraction retry or model call.
+        return rank_sections(self.fragments, allowed, required, query)
+
+    def retrieve(self, *, topic: str, query: str | None = None,
+                 context: dict | None = None) -> PolicyEvidence:
+        def unavailable(status, fallback=False):
+            return PolicyEvidence('', (), retrieval_status=status, fallback_used=fallback)
+
+        if self.extraction_failed:
+            return unavailable('technical_error')
+        if type(topic) is not str or len(topic) > 200 or (query is not None and (
+                type(query) is not str or len(query) > 4000)):
+            return unavailable('clarification_required')
+        query_topics = topics(query)
+        primary = _topic(topic)
+        if (primary in (None, 'returns') and query and not query_topics
+                and re.search(r'\b(isso|aquilo|como funciona)\b', normalize(query))):
+            return unavailable('clarification_required')
+        selected = query_topics or ((primary,) if primary else topics(topic))
+        if primary and primary != 'returns':
+            # Specific semantic routing is authoritative; lexical topics add coverage.
+            selected = tuple(dict.fromkeys((primary, *query_topics)))
+        if set(selected) & {'withdrawal', 'defect', 'preference'}:
+            selected = tuple(name for name in selected if name != 'returns')
+        if not selected or not self.fragments:
+            return unavailable('insufficient_evidence')
+        required, allowed = section_scope(selected, query, _topic_sections())
+        primary_sections = _topic_sections()[primary] if primary else ()
+        fragments = bounded((f for f in self.fragments if f.section in allowed
+                             and f.section in primary_sections), required)
+        fallback = not set(required) <= {f.section for f in fragments}
+        if fallback:
+            fragments = self._fallback(allowed, required, query or topic)
+        if not set(required) <= {f.section for f in fragments}:
+            return unavailable('insufficient_evidence', fallback)
         text = '\n\n'.join(f.text for f in fragments)
-        if len(text) > 8000 or len(fragments) > 8:
-            return None
         withdrawal = _normalize(self._text_for(('4.1',)))
         window_verified = bool(re.search(r'\b7\s*(?:\([^)]*\)\s*)?(?:dias?|days?)\b', withdrawal))
-        assessment = assess_case(selected, context, window_verified)
-        return PolicyEvidence(text, self._references(fragments), assessment)
+        assessments = [a for name in selected if (a := assess_case(name, context, window_verified))]
+        assessment = None
+        if assessments:
+            missing = tuple(dict.fromkeys(key for a in assessments for key in a.missing_facts))
+            assessment = replace(assessments[0], missing_facts=missing,
+                                 decision='clarification_required' if missing else 'review_required')
+        status = ('clarification_required' if assessment and assessment.missing_facts else 'ok')
+        return PolicyEvidence(text, self._references(fragments), assessment,
+                              retrieval_status=status, fallback_used=fallback)
 
     def pricing_rules(self) -> PixRules | None:
         payments = _normalize(self._text_for(('3',)))
