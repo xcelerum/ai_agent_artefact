@@ -1,0 +1,51 @@
+customer_id,name,phone,email,city
+1,Ana Lima (Demo),(00) 90000-0001,cliente001@example.invalid,Campo Grande
+2,Bruno Rocha (Demo),(00) 90000-0002,cliente002@example.invalid,Campo Grande
+3,Clara Martins (Demo),(00) 90000-0003,cliente003@example.invalid,Campo Grande
+4,Diego Alves (Demo),(00) 90000-0004,cliente004@example.invalid,Campo Grande
+5,Elisa Souza (Demo),(00) 90000-0005,cliente005@example.invalid,Campo Grande
+6,Felipe Costa (Demo),(00) 90000-0006,cliente006@example.invalid,Campo Grande
+7,Gabriela Nunes (Demo),(00) 90000-0007,cliente007@example.invalid,Campo Grande
+8,Henrique Teixeira (Demo),(00) 90000-0008,cliente008@example.invalid,Campo Grande
+9,Isabela Ribeiro (Demo),(00) 90000-0009,cliente009@example.invalid,Dourados
+10,João Pereira (Demo),(00) 90000-0010,cliente010@example.invalid,Campo Grande
+11,Karen Oliveira (Demo),(00) 90000-0011,cliente011@example.invalid,Três Lagoas
+12,Lucas Fernandes (Demo),(00) 90000-0012,cliente012@example.invalid,Campo Grande
+13,Marina Barros (Demo),(00) 90000-0013,cliente013@example.invalid,Campo Grande
+14,Nicolas Pinto (Demo),(00) 90000-0014,cliente014@example.invalid,Campo Grande
+15,Olívia Cardoso (Demo),(00) 90000-0015,cliente015@example.invalid,Corumbá
+16,Paulo Reis (Demo),(00) 90000-0016,cliente016@example.invalid,Campo Grande
+17,Renata Freitas (Demo),(00) 90000-0017,cliente017@example.invalid,Ponta Porã
+18,Sofia Campos (Demo),(00) 90000-0018,cliente018@example.invalid,Campo Grande
+19,Tiago Moreira (Demo),(00) 90000-0019,cliente019@example.invalid,Campo Grande
+20,Valéria Mendes (Demo),(00) 90000-0020,cliente020@example.invalid,Dourados
+21,Ana Lima (Demo),(00) 90000-0021,cliente021@example.invalid,Três Lagoas
+22,Bruno Rocha (Demo),(00) 90000-0022,cliente022@example.invalid,Campo Grande
+23,Clara Martins (Demo),(00) 90000-0023,cliente023@example.invalid,Corumbá
+24,Diego Alves (Demo),(00) 90000-0024,cliente024@example.invalid,Ponta Porã
+25,Elisa Souza (Demo),(00) 90000-0025,cliente025@example.invalid,Campo Grande
+26,Felipe Costa (Demo),(00) 90000-0026,cliente026@example.invalid,Campo Grande
+27,Gabriela Nunes (Demo),(00) 90000-0027,cliente027@example.invalid,Dourados
+28,Henrique Teixeira (Demo),(00) 90000-0028,cliente028@example.invalid,Três Lagoas
+29,Isabela Ribeiro (Demo),(00) 90000-0029,cliente029@example.invalid,Campo Grande
+30,João Pereira (Demo),(00) 90000-0030,cliente030@example.invalid,Campo Grande
+31,Karen Oliveira (Demo),(00) 90000-0031,cliente031@example.invalid,Campo Grande
+32,Lucas Fernandes (Demo),(00) 90000-0032,cliente032@example.invalid,Dourados
+33,Marina Barros (Demo),(00) 90000-0033,cliente033@example.invalid,Três Lagoas
+34,Nicolas Pinto (Demo),(00) 90000-0034,cliente034@example.invalid,Corumbá
+35,Olívia Cardoso (Demo),(00) 90000-0035,cliente035@example.invalid,Ponta Porã
+36,Paulo Reis (Demo),(00) 90000-0036,cliente036@example.invalid,Campo Grande
+37,Renata Freitas (Demo),(00) 90000-0037,cliente037@example.invalid,Dourados
+38,Sofia Campos (Demo),(00) 90000-0038,cliente038@example.invalid,Três Lagoas
+39,Tiago Moreira (Demo),(00) 90000-0039,cliente039@example.invalid,Corumbá
+40,Valéria Mendes (Demo),(00) 90000-0040,cliente040@example.invalid,Ponta Porã
+41,Ana Lima (Demo),(00) 90000-0041,cliente041@example.invalid,Campo Grande
+42,Bruno Rocha (Demo),(00) 90000-0042,cliente042@example.invalid,Dourados
+43,Clara Martins (Demo),(00) 90000-0043,cliente011@example.invalid,Três Lagoas
+44,Diego Alves (Demo),(00) 90000-0044,cliente044@example.invalid,Corumbá
+45,Elisa Souza (Demo),(00) 90000-0045,cliente045@example.invalid,Ponta Porã
+46,Felipe Costa (Demo),(00) 90000-0046,cliente046@example.invalid,Campo Grande
+47,Gabriela Nunes (Demo),(00) 90000-0047,cliente047@example.invalid,Dourados
+48,Henrique Teixeira (Demo),(00) 90000-0048,cliente048@example.invalid,Três Lagoas
+49,Isabela Ribeiro (Demo),(00) 90000-0049,cliente049@example.invalid,Corumbá
+50,João Pereira (Demo),(00) 90000-0050,cliente050@example.invalid,Ponta Porã
